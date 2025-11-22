@@ -178,9 +178,6 @@ step_install_hyprland() {
         hyprland hyprpaper hyprlock hypridle hyprsunset
         hyprshot hyprpicker hyprpolkitagent
 
-        # Hyprland IPC
-        dipc
-
         # Wayland essentials
         waybar swaync fuzzel wlogout
 
@@ -193,12 +190,20 @@ step_install_hyprland() {
         # Bluetooth applet
         blueman
 
+        # Media viewers
+        mpv imv
+
         # Utilities
         nwg-look brightnessctl
         gst-plugin-pipewire
     )
 
     sudo pacman -S --needed --noconfirm "${HYPRLAND[@]}"
+
+    # Install AUR packages for Hyprland
+    print_warning "Installing Hyprland AUR packages..."
+    paru -S --needed --noconfirm dipc
+
     print_success "Hyprland installed"
 }
 
