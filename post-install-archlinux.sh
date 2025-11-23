@@ -100,7 +100,7 @@ step_install_paru() {
     cd /tmp
     git clone https://aur.archlinux.org/paru.git
     cd paru
-    makepkg -si --noconfirm
+    makepkg -si
     cd ~
     rm -rf /tmp/paru
     print_success "paru installed"
@@ -593,7 +593,87 @@ EOF
 }
 
 # ============================================================================
-# STEP 22: Cleanup
+# STEP 22: Setup Claude Code
+# ============================================================================
+step_setup_claude_code() {
+    print_header "Setting up Claude Code Configuration"
+
+    # Verificar que dotfiles existen
+    if [[ ! -d "$HOME/.dotfiles/claude" ]]; then
+        print_warning "Claude config not found in dotfiles, skipping..."
+        return
+    fi
+
+    # Crear symlinks para Claude config
+    if [[ ! -L "$HOME/.config/claude" ]]; then
+        print_warning "Creating symlink for Claude config..."
+        ln -sf "$HOME/.dotfiles/claude" "$HOME/.config/claude"
+        print_success "Claude config symlinked"
+    else
+        print_success "Claude config already configured"
+    fi
+
+    # Crear symlinks para SearXNG
+    if [[ -d "$HOME/.dotfiles/searxng" ]] && [[ ! -L "$HOME/searxng" ]]; then
+        print_warning "Creating symlink for SearXNG..."
+        if [[ -d "$HOME/searxng" ]]; then
+            mv "$HOME/searxng" "$HOME/searxng.bak"
+        fi
+        ln -sf "$HOME/.dotfiles/searxng" "$HOME/searxng"
+        print_success "SearXNG symlinked"
+    fi
+
+    # Crear symlinks para scripts
+    mkdir -p "$HOME/.local/bin"
+    for script in searxng-search claude-backup claude-check; do
+        if [[ -f "$HOME/.dotfiles/scripts/$script" ]] && [[ ! -L "$HOME/.local/bin/$script" ]]; then
+            ln -sf "$HOME/.dotfiles/scripts/$script" "$HOME/.local/bin/$script"
+            chmod +x "$HOME/.dotfiles/scripts/$script"
+            print_success "Script $script symlinked"
+        fi
+    done
+
+    # Configurar systemd para SearXNG auto-inicio
+    if [[ -d "$HOME/searxng" ]]; then
+        print_warning "Configuring SearXNG auto-start..."
+        mkdir -p "$HOME/.config/systemd/user"
+
+        cat > "$HOME/.config/systemd/user/searxng.service" << 'EOFSERVICE'
+[Unit]
+Description=SearXNG Metasearch Engine
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=%h/searxng
+ExecStart=/usr/bin/docker-compose up -d
+ExecStop=/usr/bin/docker-compose down
+TimeoutStartSec=0
+
+[Install]
+WantedBy=default.target
+EOFSERVICE
+
+        systemctl --user daemon-reload
+        systemctl --user enable searxng.service
+        print_success "SearXNG auto-start configured"
+
+        # Iniciar SearXNG si Docker está disponible
+        if groups | grep -q docker && command -v docker-compose &>/dev/null; then
+            print_warning "Starting SearXNG..."
+            cd "$HOME/searxng"
+            docker-compose up -d &>/dev/null || print_warning "SearXNG will start on next login"
+            print_success "SearXNG started"
+        else
+            print_warning "SearXNG will start after re-login (Docker group membership needed)"
+        fi
+    fi
+
+    print_success "Claude Code setup complete"
+}
+
+# ============================================================================
+# STEP 23: Cleanup
 # ============================================================================
 step_cleanup() {
     print_header "Cleaning up"
@@ -605,7 +685,7 @@ step_cleanup() {
 }
 
 # ============================================================================
-# STEP 23: Summary & Post-Install Instructions
+# STEP 24: Summary & Post-Install Instructions
 # ============================================================================
 step_summary() {
     print_header "Installation Complete!"
@@ -625,6 +705,9 @@ step_summary() {
     echo "  lazygit            # Git TUI"
     echo "  lazydocker         # Docker TUI"
     echo "  fastfetch          # System info"
+    echo "  claude-check       # Verify Claude Code setup"
+    echo "  s \"query\"          # Web search with SearXNG"
+    echo "  csync              # Sync Claude config to git"
     echo ""
 
     echo -e "${YELLOW}Next Steps:${NC}"
@@ -670,6 +753,7 @@ main() {
     step_restore_dotfiles
     step_setup_services
     step_performance_optimization
+    step_setup_claude_code
     step_cleanup
     step_summary
 }
