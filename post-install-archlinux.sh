@@ -64,8 +64,13 @@ step_setup_chaotic_aur() {
     fi
 
     print_warning "Installing Chaotic-AUR keyring and mirrorlist..."
-    sudo pacman-key --recv-key 3056513887B78AEB --keyserver keyserver.ubuntu.com
-    sudo pacman-key --lsign-key 3056513887B78AEB
+    
+    # Solución a posibles fallos de llaves: inicializar si es necesario
+    if ! pacman-key --list-keys 3056513887B78AEB &>/dev/null; then
+        sudo pacman-key --recv-key 3056513887B78AEB --keyserver keyserver.ubuntu.com
+        sudo pacman-key --lsign-key 3056513887B78AEB
+    fi
+    
     sudo pacman -U --noconfirm 'https://cdn-mirror.chaotic.cx/chaotic-aur/chaotic-keyring.pkg.tar.zst'
     sudo pacman -U --noconfirm 'https://cdn-mirror.chaotic.cx/chaotic-aur/chaotic-mirrorlist.pkg.tar.zst'
 
@@ -86,7 +91,7 @@ EOF
 }
 
 # ============================================================================
-# STEP 3: Install paru (AUR helper) if not installed
+# STEP 3: Install paru (AUR helper) - FIXED
 # ============================================================================
 step_install_paru() {
     print_header "Installing paru (AUR Helper)"
@@ -96,13 +101,22 @@ step_install_paru() {
         return
     fi
 
-    print_warning "Installing paru..."
+    # Limpiamos cualquier intento fallido anterior para evitar el error "already exists"
+    if [ -d "/tmp/paru-bin" ]; then
+        rm -rf /tmp/paru-bin
+    fi
+    if [ -d "/tmp/paru" ]; then
+        rm -rf /tmp/paru
+    fi
+
+    print_warning "Installing paru-bin (Version binaria para evitar errores de memoria)..."
     cd /tmp
-    git clone https://aur.archlinux.org/paru.git
-    cd paru
-    makepkg -si
+    # Usamos paru-bin en lugar de paru para evitar compilar Rust (que causa el SIGKILL)
+    git clone https://aur.archlinux.org/paru-bin.git
+    cd paru-bin
+    makepkg -si --noconfirm
     cd ~
-    rm -rf /tmp/paru
+    rm -rf /tmp/paru-bin
     print_success "paru installed"
 }
 
@@ -157,10 +171,10 @@ step_install_modern_cli() {
         git-delta lazygit github-cli glab
 
         # File managers
-        yazi # Terminal file manager with vi keybindings
+        yazi 
 
         # Additional CLI tools
-        tree # Directory tree
+        tree 
     )
 
     sudo pacman -S --needed --noconfirm "${MODERN_CLI[@]}"
@@ -222,19 +236,18 @@ step_configure_hyprpm() {
     print_warning "Adding hyprland-plugins repository..."
 
     # Add the official plugins repository
-    hyprpm add https://github.com/hyprwm/hyprland-plugins || print_warning "Repository already added"
+    # Nota: hyprpm a veces falla si los headers no coinciden, continuamos si falla
+    hyprpm add https://github.com/hyprwm/hyprland-plugins || print_warning "Repository check skipped or already added"
 
     # Update plugin repository
-    hyprpm update
+    hyprpm update || print_warning "hyprpm update warning (ignorable if first run)"
 
     # Install and enable hyprscrolling
     print_warning "Enabling hyprscrolling plugin..."
-    hyprpm enable hyprscrolling
+    hyprpm enable hyprscrolling || print_warning "Could not enable hyprscrolling automatically"
 
-    # Reload plugins (will be done on next Hyprland start)
     print_success "Hyprland plugins configured"
-    print_warning "Note: Plugins will be loaded when you start Hyprland"
-    print_warning "Add 'exec-once = hyprpm reload -n' to your hyprland.conf"
+    print_warning "Note: Add 'exec-once = hyprpm reload -n' to your hyprland.conf"
 }
 
 # ============================================================================
@@ -249,7 +262,15 @@ step_install_audio() {
     )
 
     sudo pacman -S --needed --noconfirm "${AUDIO[@]}"
-    systemctl --user enable --now pipewire pipewire-pulse wireplumber
+    
+    # Fix: Enable --user services correctly (needs running dbus user session)
+    if systemctl --user list-units &>/dev/null; then
+        systemctl --user enable --now pipewire pipewire-pulse wireplumber
+    else
+        print_warning "Could not enable user services (not logged in via GUI/session). They will start on next boot."
+        systemctl --user enable pipewire pipewire-pulse wireplumber
+    fi
+    
     print_success "PipeWire audio configured"
 }
 
@@ -307,7 +328,7 @@ step_install_python() {
     print_header "Installing Python Tools"
 
     sudo pacman -S --needed --noconfirm python python-pip
-    paru -S --needed --noconfirm uv # Modern Python package manager
+    paru -S --needed --noconfirm uv 
 
     print_success "Python tools installed"
 }
@@ -374,7 +395,7 @@ step_install_additional() {
         scx-scheds
 
         # Python tools
-        python-adblock # For qutebrowser
+        python-adblock
 
         # zRAM
         zram-generator
@@ -402,10 +423,10 @@ step_install_aur() {
     print_header "Installing AUR Packages"
 
     AUR_PACKAGES=(
-        claude-code # Claude AI in terminal
-        bun-bin     # JavaScript runtime
-        localsend   # Local file sharing
-        yaak        # API client
+        claude-code 
+        bun-bin     
+        localsend   
+        yaak        
     )
 
     paru -S --needed --noconfirm "${AUR_PACKAGES[@]}"
@@ -520,6 +541,11 @@ step_restore_dotfiles() {
         for config in "${CONFIGS_TO_APPLY[@]}"; do
             if [ -d "$config" ]; then
                 echo -e "${BLUE}Applying $config...${NC}"
+                # Intentar borrar config existente si stow falla (opcional pero util en scripts agresivos)
+                if [ -d "$HOME/.config/$config" ] && [ ! -L "$HOME/.config/$config" ]; then
+                     mv "$HOME/.config/$config" "$HOME/.config/${config}.bak"
+                fi
+                
                 if stow -v "$config" 2>/dev/null; then
                     print_success "Applied $config"
                 else
@@ -558,7 +584,7 @@ step_setup_services() {
     # Enable power-profiles-daemon
     sudo systemctl enable --now power-profiles-daemon
 
-    # Enable zram
+    # Enable zram (if not already enabled by optimization step)
     if [ -f /etc/systemd/zram-generator.conf ]; then
         sudo systemctl daemon-reload
         sudo systemctl start systemd-zram-setup@zram0.service
@@ -607,6 +633,7 @@ step_setup_claude_code() {
     # Crear symlinks para Claude config
     if [[ ! -L "$HOME/.config/claude" ]]; then
         print_warning "Creating symlink for Claude config..."
+        mkdir -p "$HOME/.config"
         ln -sf "$HOME/.dotfiles/claude" "$HOME/.config/claude"
         print_success "Claude config symlinked"
     else
@@ -655,17 +682,9 @@ WantedBy=default.target
 EOFSERVICE
 
         systemctl --user daemon-reload
-        systemctl --user enable searxng.service
-        print_success "SearXNG auto-start configured"
-
-        # Iniciar SearXNG si Docker está disponible
-        if groups | grep -q docker && command -v docker-compose &>/dev/null; then
-            print_warning "Starting SearXNG..."
-            cd "$HOME/searxng"
-            docker-compose up -d &>/dev/null || print_warning "SearXNG will start on next login"
-            print_success "SearXNG started"
-        else
-            print_warning "SearXNG will start after re-login (Docker group membership needed)"
+        if systemctl --user list-units &>/dev/null; then
+             systemctl --user enable searxng.service
+             print_success "SearXNG auto-start configured"
         fi
     fi
 
@@ -678,7 +697,10 @@ EOFSERVICE
 step_cleanup() {
     print_header "Cleaning up"
 
-    paru -Sc --noconfirm
+    # Check if paru is actually installed before trying to use it
+    if command -v paru &>/dev/null; then
+        paru -Sc --noconfirm
+    fi
     sudo pacman -Sc --noconfirm
 
     print_success "Cleanup complete"
