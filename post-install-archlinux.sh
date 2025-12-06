@@ -190,6 +190,9 @@ step_install_hyprland() {
         mpv imv
         nwg-look brightnessctl
         gst-plugin-pipewire
+        xorg-xwayland
+        qt5-wayland qt6-wayland
+        xdg-desktop-portal-hyprland
     )
 
     sudo pacman -S --needed --noconfirm "${HYPRLAND[@]}"
@@ -366,23 +369,35 @@ step_install_aur() {
 }
 
 # ============================================================================
-# STEP 17: Setup ZSH
+# STEP 17: Setup ZSH (EJECUTAR DESPUÉS DE DOTFILES)
 # ============================================================================
 step_setup_zsh() {
     print_header "Setting up ZSH"
 
-    if [[ "$SHELL" != *"zsh"* ]]; then
-        print_warning "Changing default shell to ZSH..."
-        chsh -s $(which zsh)
-    fi
-
+    # Install zinit if not present
     if [ ! -d "${HOME}/.local/share/zinit/zinit.git" ]; then
         print_warning "Installing zinit..."
         bash -c "$(curl --fail --show-error --silent --location https://raw.githubusercontent.com/zdharma-continuum/zinit/HEAD/scripts/install.sh)"
     fi
 
-    if [ -f ~/.zshrc ] && [ ! -f ~/.zshrc.backup ]; then
-        cp ~/.zshrc ~/.zshrc.backup
+    # Change default shell to ZSH
+    if [[ "$SHELL" != *"zsh"* ]]; then
+        print_warning "Changing default shell to ZSH..."
+        chsh -s $(which zsh)
+        print_success "Shell changed to ZSH (effective after logout/login)"
+    else
+        print_success "ZSH is already the default shell"
+    fi
+
+    # Verificar que .zshrc existe (debería venir de dotfiles)
+    if [ -f ~/.zshrc ]; then
+        if [ -L ~/.zshrc ]; then
+            print_success "ZSH config linked from dotfiles"
+        else
+            print_warning "ZSH config exists but is not a symlink (may not be from dotfiles)"
+        fi
+    else
+        print_warning "No .zshrc found - dotfiles may not have been applied correctly"
     fi
 
     print_success "ZSH setup complete"
@@ -435,14 +450,27 @@ step_restore_dotfiles() {
     if [ -d "$DOTFILES_DIR" ]; then
         print_warning "Applying dotfiles with stow..."
         cd "$DOTFILES_DIR"
+
+        # Backup .zshrc if exists and is not a symlink (antes de aplicar dotfiles)
+        if [ -f "$HOME/.zshrc" ] && [ ! -L "$HOME/.zshrc" ]; then
+            print_warning "Backing up existing .zshrc to .zshrc.pre-dotfiles"
+            mv "$HOME/.zshrc" "$HOME/.zshrc.pre-dotfiles"
+        fi
+
         for config in "${CONFIGS_TO_APPLY[@]}"; do
             if [ -d "$config" ]; then
                 # Backup if exists and is not a symlink
                 if [ -d "$HOME/.config/$config" ] && [ ! -L "$HOME/.config/$config" ]; then
-                    mv "$HOME/.config/$config" "$HOME/.config/${config}.bak"
+                    print_warning "Backing up existing $config to $config.pre-dotfiles"
+                    mv "$HOME/.config/$config" "$HOME/.config/${config}.pre-dotfiles"
                 fi
 
-                stow -v "$config" 2>/dev/null || stow -R "$config" 2>/dev/null
+                # Apply dotfiles with stow (-R forces restow if already exists)
+                if stow -R "$config" 2>/dev/null; then
+                    print_success "Applied $config dotfiles"
+                else
+                    print_warning "Failed to apply $config dotfiles (may already be linked)"
+                fi
             fi
         done
         cd "$HOME"
@@ -581,6 +609,20 @@ main() {
     echo "Press Enter to continue..."
     read
 
+    # ========================================================================
+    # ORDEN DE EJECUCIÓN - IMPORTANTE: NO MODIFICAR SIN ENTENDER DEPENDENCIAS
+    # ========================================================================
+    # El orden de los pasos es CRÍTICO para evitar conflictos de archivos:
+    #
+    # 1. Instalación de paquetes primero (incluyendo stow, git, zsh)
+    # 2. Configurar Git ANTES de clonar dotfiles (necesita git config)
+    # 3. Restaurar Dotfiles ANTES de setup ZSH (evita que stow falle)
+    #    - Si se hace setup ZSH primero, se crea ~/.zshrc
+    #    - Luego stow FALLA porque ~/.zshrc ya existe y no es symlink
+    # 4. Setup ZSH DESPUÉS de dotfiles (solo cambia shell, no crea configs)
+    # 5. Setup Claude Code al final (usa configs de dotfiles)
+    # ========================================================================
+
     # Execute steps with error handling
     run_step "System Update" step_system_update
     run_step "Setup Chaotic-AUR" step_setup_chaotic_aur
@@ -598,9 +640,9 @@ main() {
     run_step "Install Themes" step_install_themes
     run_step "Install Additional Tools" step_install_additional
     run_step "Install AUR Packages" step_install_aur
-    run_step "Setup ZSH" step_setup_zsh
-    run_step "Setup Git" step_setup_git
-    run_step "Restore Dotfiles" step_restore_dotfiles
+    run_step "Setup Git" step_setup_git                          # MOVIDO: Antes de dotfiles (necesario para git clone)
+    run_step "Restore Dotfiles" step_restore_dotfiles            # MOVIDO: Antes de setup ZSH (evita conflictos)
+    run_step "Setup ZSH" step_setup_zsh                          # MOVIDO: Después de dotfiles (no crea .zshrc)
     run_step "Setup Services" step_setup_services
     run_step "Performance Optimizations" step_performance_optimization
     run_step "Setup Claude Code" step_setup_claude_code
