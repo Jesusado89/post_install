@@ -342,7 +342,15 @@ step_install_additional() {
     sudo pacman -S --needed --noconfirm "${ADDITIONAL[@]}"
 
     print_warning "Installing ProtonVPN..."
-    paru -S --needed --noconfirm protonvpn-cli proton-pass-cli-bin
+    paru -S --needed --noconfirm protonvpn-cli
+
+    print_warning "Installing Proton Pass CLI..."
+    if ! command -v pass-cli &>/dev/null; then
+        curl -fsSL https://proton.me/download/pass-cli/install.sh | bash
+        print_success "Proton Pass CLI installed"
+    else
+        print_success "Proton Pass CLI already installed"
+    fi
 
     sudo systemctl enable --now bluetooth
 
