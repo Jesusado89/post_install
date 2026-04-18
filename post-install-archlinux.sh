@@ -182,7 +182,7 @@ step_install_hyprland() {
     print_header "Installing Hyprland & Wayland"
 
     HYPRLAND=(
-        hyprland hyprpaper hyprlock hypridle hyprsunset
+        hyprland hyprpaper swaylock-effects-git hypridle hyprsunset
         hyprshot hyprpicker hyprpolkitagent
         waybar swaync fuzzel wlogout
         cliphist wl-clipboard
