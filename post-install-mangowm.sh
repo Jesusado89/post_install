@@ -309,7 +309,10 @@ step_install_fonts() {
 step_install_browsers() {
     print_header "Installing Browsers"
 
-    sudo pacman -S --needed --noconfirm firefox-developer-edition qutebrowser librewolf
+    sudo pacman -S --needed --noconfirm firefox-developer-edition qutebrowser
+
+    print_warning "Installing librewolf (AUR)..."
+    paru -S --needed --noconfirm librewolf-bin
 
     print_success "Browsers installed"
 }
@@ -359,6 +362,13 @@ step_install_additional() {
     fi
 
     sudo systemctl enable --now bluetooth
+
+    # Create Backgrounds directory for swaybg wallpaper
+    mkdir -p "$HOME/Backgrounds"
+    if [ ! -f "$HOME/Backgrounds/dune.jpg" ]; then
+        print_warning "~/Backgrounds/dune.jpg not found - swaybg will fail on first launch."
+        print_warning "Place a wallpaper at ~/Backgrounds/dune.jpg before starting MangoWM."
+    fi
 
     print_success "Additional tools installed"
 }
@@ -605,9 +615,11 @@ step_summary() {
     fi
 
     echo -e "${YELLOW}Please REBOOT your system now.${NC}\n"
-    echo -e "${BLUE}Después del reinicio puedes iniciar MangoWM con:${NC}"
-    echo -e "  ${YELLOW}•${NC} Desde un TTY: ${BLUE}mangowm${NC}"
-    echo -e "  ${YELLOW}•${NC} O configura un display manager (SDDM, GDM) para arrancarlo automáticamente"
+    echo -e "${BLUE}Después del reinicio puedes iniciar MangoWM:${NC}"
+    echo -e "  ${YELLOW}•${NC} Desde TTY: ${BLUE}dbus-run-session mango${NC}"
+    echo -e "  ${YELLOW}•${NC} Con SDDM (recomendado): instala ${BLUE}sddm${NC} y ejecuta ${BLUE}sudo systemctl enable --now sddm${NC}"
+    echo -e "    (MangoWM aparece como 'Mango' en la lista de sesiones)"
+    echo -e "  ${YELLOW}⚠${NC} Recuerda poner tu wallpaper en ${BLUE}~/Backgrounds/dune.jpg${NC}"
     echo ""
 }
 
