@@ -583,6 +583,7 @@ step_cleanup() {
     if command -v paru &>/dev/null; then
         paru -Sc --noconfirm || print_warning "paru cleanup had issues, continuing..."
     fi
+    sudo rm -f /var/cache/pacman/pkg/download-* 2>/dev/null
     sudo pacman -Sc --noconfirm || print_warning "pacman cleanup had issues, continuing..."
     print_success "Cleanup complete"
     return 0 # Always succeed, cleanup is not critical
