@@ -384,6 +384,7 @@ step_install_aur() {
         bun-bin
         localsend-bin
         yaak-bin
+        swaylock-effects-git
     )
 
     paru -S --needed --noconfirm "${AUR_PACKAGES[@]}"
