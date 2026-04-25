@@ -113,7 +113,7 @@ EOF
 }
 
 # ============================================================================
-# STEP 3: Install paru (AUR helper) - BINARY VERSION
+# STEP 3: Install paru (AUR helper) - via Chaotic-AUR
 # ============================================================================
 step_install_paru() {
     print_header "Installing paru (AUR Helper)"
@@ -123,16 +123,8 @@ step_install_paru() {
         return
     fi
 
-    # Limpieza preventiva para evitar error "destination path already exists"
-    rm -rf /tmp/paru /tmp/paru-bin
-
-    print_warning "Installing paru-bin (Fast binary installation)..."
-    cd /tmp
-    git clone https://aur.archlinux.org/paru-bin.git
-    cd paru-bin
-    makepkg -si --noconfirm
-    cd ~
-    rm -rf /tmp/paru-bin
+    # Chaotic-AUR provee paru como binario, sin necesidad de compilar
+    sudo pacman -S --needed --noconfirm paru
     print_success "paru installed"
 }
 
@@ -206,9 +198,14 @@ step_install_mangowm() {
         nwg-look
         # PipeWire integration
         gst-plugin-pipewire
+        # Lock screen
+        swaylock
     )
 
     sudo pacman -S --needed --noconfirm "${MANGOWM_PKGS[@]}"
+
+    # Allow brightnessctl to change backlight without sudo
+    sudo usermod -aG video "$USER"
 
     print_warning "Installing MangoWM from AUR..."
     paru -S --needed --noconfirm mangowm-git
@@ -323,7 +320,7 @@ step_install_browsers() {
 step_install_themes() {
     print_header "Installing Themes"
 
-    paru -S --needed --noconfirm tokyonight-gtk-theme-git rose-pine-gtk-theme-full
+    paru -S --needed --noconfirm mojave-ct-icon-theme newaita-reborn-icons-git catppuccin-gtk-theme-mocha
 
     print_success "Themes installed"
 }
@@ -346,6 +343,8 @@ step_install_additional() {
         python-adblock
         zram-generator
         gnome-keyring
+        gnome-calendar
+        wireguard-tools
     )
 
     sudo pacman -S --needed --noconfirm "${ADDITIONAL[@]}"
@@ -362,13 +361,6 @@ step_install_additional() {
     fi
 
     sudo systemctl enable --now bluetooth
-
-    # Create Backgrounds directory for swaybg wallpaper
-    mkdir -p "$HOME/Backgrounds"
-    if [ ! -f "$HOME/Backgrounds/dune.jpg" ]; then
-        print_warning "~/Backgrounds/dune.jpg not found - swaybg will fail on first launch."
-        print_warning "Place a wallpaper at ~/Backgrounds/dune.jpg before starting MangoWM."
-    fi
 
     print_success "Additional tools installed"
 }
@@ -497,9 +489,19 @@ step_restore_dotfiles() {
                 fi
             fi
         done
+        # Link waybar scripts from base waybar dotfiles (waybar-mango doesn't include them)
+        if [ -d "$DOTFILES_DIR/waybar/.config/waybar/scripts" ]; then
+            ln -sf "$DOTFILES_DIR/waybar/.config/waybar/scripts" "$HOME/.config/waybar/scripts"
+            print_success "Linked waybar scripts"
+        fi
+
         cd "$HOME"
         print_success "Dotfiles configuration complete"
     fi
+
+    # Create required directories
+    mkdir -p "$HOME/Screenshots"
+    print_success "Created ~/Screenshots directory"
 }
 
 # ============================================================================
@@ -651,8 +653,8 @@ main() {
 
     run_step "System Update" step_system_update
     run_step "Setup Chaotic-AUR" step_setup_chaotic_aur
-    run_step "Install paru (AUR Helper)" step_install_paru
     run_step "Install Essential Packages" step_install_essentials
+    run_step "Install paru (AUR Helper)" step_install_paru
     run_step "Install Modern CLI Tools" step_install_modern_cli
     run_step "Install MangoWM & Wayland" step_install_mangowm
     run_step "Install Audio (PipeWire)" step_install_audio
